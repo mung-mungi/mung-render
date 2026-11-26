@@ -3,7 +3,7 @@ name: render-ep
 on:
   push:
     branches: [main]
-    paths: ["job/**"]
+    paths: ["job/**", "!job/.keep"]
   workflow_dispatch:
 permissions:
   contents: write

@@ -1,0 +1,53 @@
+name: render-test
+on:
+  push:
+    branches: [main]
+    paths: ["sample/**", ".github/workflows/render-test.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  part:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        part: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q numpy opencv-python-headless imageio-ffmpeg
+      - name: render
+        run: |
+          FF=$(python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())")
+          S=$(( ${{ matrix.part }} * 150 )); E=$(( S + 150 ))
+          START=$(date +%s)
+          python sample/render.py $S $E part${{ matrix.part }}.mp4 "$FF"
+          echo "part${{ matrix.part }} $(( $(date +%s) - START ))s cpu=$(nproc)" > time${{ matrix.part }}.txt
+          cat time${{ matrix.part }}.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part${{ matrix.part }}
+          path: |
+            part${{ matrix.part }}.mp4
+            time${{ matrix.part }}.txt
+  join:
+    needs: part
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: pip install -q imageio-ffmpeg
+      - name: join
+        run: |
+          FF=$(python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())")
+          printf "file part0.mp4\nfile part1.mp4\nfile part2.mp4\nfile part3.mp4\n" > list.txt
+          $FF -loglevel error -y -f concat -safe 0 -i list.txt -c copy sample_cloud.mp4
+          cat time*.txt > times.txt
+          echo "run ${{ github.run_id }} $(date -u +%FT%TZ)" >> times.txt
+      - name: push result
+        run: |
+          mkdir out && cp sample_cloud.mp4 times.txt out/ && cd out
+          git init -q -b results
+          git -c user.name=render-bot -c user.email=bot@users.noreply.github.com commit -qm "result ${{ github.run_id }}" --allow-empty
+          git add . && git -c user.name=render-bot -c user.email=bot@users.noreply.github.com commit -qm "result ${{ github.run_id }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" results

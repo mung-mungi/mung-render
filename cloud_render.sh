@@ -13,4 +13,5 @@ while true; do NEW=$(git ls-remote origin results | cut -f1); [ -n "$NEW" ] && [
 TMP=$(mktemp -d); git clone -q --depth 1 -b results "$(git remote get-url origin)" $TMP/r && cp $TMP/r/render.mp4 "$OUT" && cat $TMP/r/times.txt
 # 정리: 그날 재료 지우고 결과 가지 삭제
 git rm -rq job && git -c user.name=mung-mungi -c user.email=mung-mungi@users.noreply.github.com commit -qm "그날 재료 삭제(렌더 끝)" && git -c push.negotiate=true push -q origin main
-git push -q origin --delete results; echo "✅ 받기 완료 $(( $(date +%s)-T0 ))초 · 클라우드 재료·결과 삭제함 → $OUT"
+E=$(mktemp -d); (cd $E && git init -q -b results && echo "비어 있음 — 렌더 결과는 받은 뒤 지웁니다" > README.md && git add . && git -c user.name=mung-mungi -c user.email=mung-mungi@users.noreply.github.com commit -qm "결과 비움" && git push -f -q "$(git -C $R remote get-url origin)" results 2>/dev/null)
+echo "✅ 받기 완료 $(( $(date +%s)-T0 ))초 · 클라우드 재료·결과 삭제함 → $OUT"

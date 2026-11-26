@@ -10,6 +10,7 @@ permissions:
 concurrency: { group: render-ep, cancel-in-progress: false }
 jobs:
   part:
+    if: hashFiles('job/script.json') != ''
     runs-on: ubuntu-latest
     strategy:
       matrix:

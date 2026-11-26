@@ -1,0 +1,46 @@
+name: render-ep
+# job/ 폴더에 그날 재료(대본 등)를 올리면 8조각으로 나눠 렌더 → 이어 붙여 results 가지에 올림
+on:
+  push:
+    branches: [main]
+    paths: ["job/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: render-ep, cancel-in-progress: false }
+jobs:
+  part:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        part: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install -q -r lib/requirements.txt imageio-ffmpeg==0.6.0 && echo "FFMPEG=$(python -c 'import imageio_ffmpeg as i;print(i.get_ffmpeg_exe())')" >> $GITHUB_ENV
+      - name: render
+        run: |
+          N=$(python -c "import sys;sys.argv=['x','job/script.json','0','0','x'];sys.path.insert(0,'lib');import render_ep as r;print(r.NF)")
+          P=8; K=${{ matrix.part }}; S=$(( N*K/P )); E=$(( N*(K+1)/P ))
+          T0=$(date +%s); python lib/render_ep.py job/script.json $S $E part$K.mp4
+          echo "part$K frames=$((E-S)) $(( $(date +%s)-T0 ))s cpu=$(nproc)" > time$K.txt; cat time$K.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: "part${{ matrix.part }}", path: "part${{ matrix.part }}.mp4\ntime${{ matrix.part }}.txt", retention-days: 1 }
+  join:
+    needs: part
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { merge-multiple: true }
+      - name: join
+        run: |
+          pip install -q imageio-ffmpeg==0.6.0; FFMPEG=$(python -c "import imageio_ffmpeg as i;print(i.get_ffmpeg_exe())")
+          for k in 0 1 2 3 4 5 6 7; do echo "file part$k.mp4"; done > list.txt
+          $FFMPEG -v error -y -f concat -safe 0 -i list.txt -c copy render.mp4
+          cat time*.txt > times.txt; echo "run ${{ github.run_id }} end $(date -u +%FT%TZ)" >> times.txt
+      - name: push result
+        run: |
+          mkdir out && mv render.mp4 times.txt out/ && cd out && git init -q -b results && git add .
+          git -c user.name=render-bot -c user.email=bot@users.noreply.github.com commit -qm "result ${{ github.run_id }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" results
